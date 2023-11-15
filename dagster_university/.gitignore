@@ -1,5 +1,9 @@
 # Project Specific
 data/raw/*
+data/outputs/*.png
+data/staging/*.duckdb
+data/staging/*.geojson
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

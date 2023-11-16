@@ -1,8 +1,6 @@
-import os
-
-import duckdb
 import requests
 from dagster import asset
+from dagster_duckdb import DuckDBResource
 
 from . import constants
 
@@ -21,7 +19,7 @@ def taxi_trips_file():
 @asset(
     deps=["taxi_trips_file"]
 )
-def taxi_trips():
+def taxi_trips(database: DuckDBResource):
     """Tax trips dataset loaded into a DuckDB database.
     """
     sql_query = """
@@ -40,7 +38,7 @@ def taxi_trips():
         from 'data/raw/taxi_trips_2023-03.parquet'
     );
     """
-    with duckdb.connect(os.getenv("DUCKDB_DATABASE")) as conn:
+    with database.get_connection() as conn:
         conn.execute(sql_query)
 
 @asset
@@ -56,7 +54,7 @@ def taxi_zones_file():
 @asset(
     deps=["taxi_zones_file"]
 )
-def taxi_zones():
+def taxi_zones(database: DuckDBResource):
     """Tax taxi zones dataset loaded into a DuckDB database.
     """
     sql_query = """
@@ -69,5 +67,5 @@ def taxi_zones():
         from 'data/raw/taxi_zones.csv'
     );
     """
-    with duckdb.connect(os.getenv("DUCKDB_DATABASE")) as conn:
+    with database.get_connection() as conn:
         conn.execute(sql_query)

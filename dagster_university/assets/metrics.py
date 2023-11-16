@@ -1,10 +1,9 @@
-import os
-
 import duckdb
 import geopandas as gpd
 import plotly.express as px
 import plotly.io as pio
 from dagster import asset
+from dagster_duckdb import DuckDBResource
 
 from . import constants
 
@@ -12,7 +11,7 @@ from . import constants
 @asset(
   deps=["taxi_trips", "taxi_zones"]
 )
-def manhattan_stats():
+def manhattan_stats(database: DuckDBResource):
     query = """
     select
         zones.zone,
@@ -25,9 +24,8 @@ def manhattan_stats():
     group by zone, borough, geometry
     """
 
-    conn = duckdb.connect(os.getenv("DUCKDB_DATABASE"))
-    trips_by_zone = conn.execute(query).fetch_df()
-    conn.close()
+    with database.get_connection() as conn:
+        trips_by_zone = conn.execute(query).fetch_df()
 
     trips_by_zone["geometry"] = gpd.GeoSeries.from_wkt(trips_by_zone["geometry"])
     trips_by_zone = gpd.GeoDataFrame(trips_by_zone)
@@ -62,7 +60,7 @@ def manhattan_map():
 @asset(
   deps=["taxi_trips"]
 )
-def trips_by_week():
+def trips_by_week(database: DuckDBResource):
 
     start_date = '2023-02-26'  # Sunday, February 26th
     end_date = '2023-04-01'  # Sunday, April 1st
@@ -82,6 +80,6 @@ def trips_by_week():
     order by period
     """
 
-    with duckdb.connect(os.getenv("DUCKDB_DATABASE")) as conn:
+    with database.get_connection() as conn:
         df = conn.execute(query).fetch_df()
         df.to_csv(constants.TRIPS_BY_WEEK_FILE_PATH, index=False)

@@ -1,4 +1,5 @@
-import duckdb
+import os
+import pandas as pd
 import geopandas as gpd
 import plotly.express as px
 import plotly.io as pio
@@ -6,6 +7,7 @@ from dagster import asset
 from dagster_duckdb import DuckDBResource
 
 from . import constants
+from ..partitions import weekly_partition
 
 
 @asset(
@@ -58,16 +60,16 @@ def manhattan_map():
 
 
 @asset(
-  deps=["taxi_trips"]
+    deps=["taxi_trips"],
+    partitions_def=weekly_partition
 )
-def trips_by_week(database: DuckDBResource):
+def trips_by_week(context, database: DuckDBResource):
 
-    start_date = '2023-02-26'  # Sunday, February 26th
-    end_date = '2023-04-01'  # Sunday, April 1st
+    start_date = context.asset_partition_key_for_output()
 
     query = f"""
     select
-      date_trunc('week', pickup_datetime) - interval '1 day' as period,
+      '{start_date}' as period,
       count(*) as num_trips,
       sum(passenger_count)::int as passenger_count,
       round(sum(total_amount), 2) as total_amount,
@@ -75,11 +77,25 @@ def trips_by_week(database: DuckDBResource):
     from trips
     where
       pickup_datetime::date >= '{start_date}'
-      and pickup_datetime::date <= '{end_date}'
+      and pickup_datetime::date <= '{start_date}'::date + interval '1 week'
     group by period
     order by period
     """
 
     with database.get_connection() as conn:
         df = conn.execute(query).fetch_df()
-        df.to_csv(constants.TRIPS_BY_WEEK_FILE_PATH, index=False)
+
+        # Updates the `start_date` period of data in the existing CSV, or writes to a
+        # new file.
+        #
+        # NOTE: this may result in concurrency issues; it may be better to write the
+        # partitioned data to separate files, or not use CSVs for this instance.
+        path = constants.TRIPS_BY_WEEK_FILE_PATH
+        if os.path.exists(path):
+            # WARNING: this requires the dataset to fit into memory.
+            df_existing = pd.read_csv(path)
+            df_existing = df_existing[df_existing['period'] != start_date]
+            df_existing = pd.concat([df_existing, df])
+            df_existing.to_csv(constants.TRIPS_BY_WEEK_FILE_PATH, index=False)
+        else:
+            df.to_csv(constants.TRIPS_BY_WEEK_FILE_PATH, index=False)

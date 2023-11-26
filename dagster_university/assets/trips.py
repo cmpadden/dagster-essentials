@@ -1,13 +1,15 @@
+import pandas as pd
 import requests
-from dagster import asset
+from dagster import MetadataValue, asset
 from dagster_duckdb import DuckDBResource
 
-from . import constants
 from ..partitions import monthly_partition
+from . import constants
 
 
 @asset(
-    partitions_def=monthly_partition
+    partitions_def=monthly_partition,
+    group_name="raw_files",
 )
 def taxi_trips_file(context):
     """Raw parquet files of taxi trips; sourced from the NYC Open Data portal.
@@ -22,9 +24,13 @@ def taxi_trips_file(context):
     with open(constants.TAXI_TRIPS_TEMPLATE_FILE_PATH.format(month_to_fetch), "wb") as output_file:
         output_file.write(raw_trips.content)
 
+    num_rows = len(pd.read_parquet(constants.TAXI_TRIPS_TEMPLATE_FILE_PATH.format(month_to_fetch)))
+    context.add_output_metadata({'Number of records': MetadataValue.int(num_rows)})
+
 @asset(
     deps=["taxi_trips_file"],
-    partitions_def=monthly_partition
+    partitions_def=monthly_partition,
+    group_name="ingested",
 )
 def taxi_trips(context, database: DuckDBResource):
     """Tax trips dataset loaded into a DuckDB database.
@@ -70,8 +76,10 @@ def taxi_trips(context, database: DuckDBResource):
     with database.get_connection() as conn:
         conn.execute(query)
 
-@asset
-def taxi_zones_file():
+@asset(
+    group_name="raw_files"
+)
+def taxi_zones_file(context):
     """Raw CSV file of taxi zones; sourced from the NYC Open Data portal.
     """
     response = requests.get(
@@ -80,8 +88,13 @@ def taxi_zones_file():
     with open(constants.TAXI_ZONES_FILE_PATH, "wb") as output_file:
         output_file.write(response.content)
 
+    num_rows = len(pd.read_parquet(constants.TAXI_ZONES_FILE_PATH))
+    context.add_output_metadata({'Number of records': MetadataValue.int(num_rows)})
+
+
 @asset(
-    deps=["taxi_zones_file"]
+    deps=["taxi_zones_file"],
+    group_name="ingested"
 )
 def taxi_zones(database: DuckDBResource):
     """Tax taxi zones dataset loaded into a DuckDB database.
@@ -98,3 +111,4 @@ def taxi_zones(database: DuckDBResource):
     """
     with database.get_connection() as conn:
         conn.execute(sql_query)
+

@@ -1,17 +1,19 @@
 import os
-import pandas as pd
+
 import geopandas as gpd
+import pandas as pd
 import plotly.express as px
 import plotly.io as pio
 from dagster import asset
 from dagster_duckdb import DuckDBResource
 
-from . import constants
 from ..partitions import weekly_partition
+from . import constants
 
 
 @asset(
-  deps=["taxi_trips", "taxi_zones"]
+    deps=["taxi_trips", "taxi_zones"],
+    group_name="metrics",
 )
 def manhattan_stats(database: DuckDBResource):
     query = """
@@ -36,7 +38,8 @@ def manhattan_stats(database: DuckDBResource):
         output_file.write(trips_by_zone.to_json())
 
 @asset(
- deps=["manhattan_stats"],
+    deps=["manhattan_stats"],
+    group_name="metrics",
 )
 def manhattan_map():
     trips_by_zone = gpd.read_file(constants.MANHATTAN_STATS_FILE_PATH)
@@ -61,7 +64,8 @@ def manhattan_map():
 
 @asset(
     deps=["taxi_trips"],
-    partitions_def=weekly_partition
+    partitions_def=weekly_partition,
+    group_name="metrics",
 )
 def trips_by_week(context, database: DuckDBResource):
 
